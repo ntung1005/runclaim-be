@@ -101,7 +101,7 @@ Lưới ô và bộ lọc GPS có hai bản: TypeScript ở [src/game](src/game)
 src/
   server.ts            khởi động HTTP server (chạy trên máy, VPS…)
   index.ts             export app Express cho Vercel
-  app.ts               gắn middleware (CORS, JSON, xác thực), router, xử lý lỗi
+  api.ts               gắn middleware (CORS, JSON, xác thực), router, xử lý lỗi
   env.ts, supabase.ts  cấu hình, client Supabase (admin / theo người dùng)
   auth.ts              đăng ký, đăng nhập, làm mới token, middleware xác thực
   http.ts              lỗi API, đổi lỗi SQL thành mã lỗi, đọc tham số

@@ -1,4 +1,4 @@
-import { createApp } from './app.ts';
+import { createApp } from './api.ts';
 import { loadEnv } from './env.ts';
 import { createSupabase } from './supabase.ts';
 

@@ -25,7 +25,7 @@ declare global {
   }
 }
 
-/** Body JSON đã được express.json() đọc (app.ts). Không có body: invalid_json. */
+/** Body JSON đã được express.json() đọc (api.ts). Không có body: invalid_json. */
 export function readJson(req: Request): Record<string, unknown> {
   const body: unknown = req.body;
   if (body === undefined) throw new ApiError(400, 'invalid_json');

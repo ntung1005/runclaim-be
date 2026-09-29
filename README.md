@@ -100,8 +100,7 @@ Lưới ô và bộ lọc GPS có hai bản: TypeScript ở [src/game](src/game)
 ```
 src/
   server.ts            khởi động HTTP server (chạy trên máy, VPS…)
-  index.ts             export app Express cho Vercel
-  api.ts               gắn middleware (CORS, JSON, xác thực), router, xử lý lỗi
+  app.ts               gắn middleware (CORS, JSON, xác thực), router, xử lý lỗi; điểm vào Vercel
   env.ts, supabase.ts  cấu hình, client Supabase (admin / theo người dùng)
   auth.ts              đăng ký, đăng nhập, làm mới token, middleware xác thực
   http.ts              lỗi API, đổi lỗi SQL thành mã lỗi, đọc tham số
@@ -116,7 +115,7 @@ test/                  unit test và e2e
 
 1. Supabase thật: `npx supabase link --project-ref <ref>` rồi `npx supabase db push`. Tắt Anonymous sign-ins. Chỉ nạp phần CLB và phường trong `seed.sql`.
 2. Chạy server ở bất kỳ nơi nào có Node 22 (Fly.io, Render, VPS…): `npm ci --omit=dev && node src/server.ts` với biến môi trường như trên, `ENABLE_DEV_TOOLS=false`, `CORS_ORIGIN` là domain web thật.
-   Hoặc Vercel: import repo, Vercel tự nhận `src/index.ts`; đặt biến môi trường trong Project Settings rồi Redeploy.
+   Hoặc Vercel: import repo, Vercel tự nhận `src/app.ts`; đặt biến môi trường trong Project Settings rồi Redeploy.
 3. Build app với `API_URL` trỏ tới server này.
 
 Lưu ý khi lên production: mọi request đăng nhập tới Supabase Auth đều từ IP của server, nên giới hạn `sign_in_sign_ups` theo IP của Supabase áp dụng chung cho mọi người dùng. Cần nâng giới hạn đó trong Auth settings (server đã tự giới hạn theo IP + tên đăng nhập bằng `AUTH_MAX_ATTEMPTS`).

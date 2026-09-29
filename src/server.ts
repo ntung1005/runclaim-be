@@ -1,9 +1,4 @@
-import { createApp } from './api.ts';
-import { loadEnv } from './env.ts';
-import { createSupabase } from './supabase.ts';
-
-const env = loadEnv();
-const app = createApp(env, createSupabase(env));
+import app, { env } from './app.ts';
 
 app.listen(env.port, '0.0.0.0', () => {
   console.log(`RunClaim BE chạy tại http://localhost:${env.port} (Supabase: ${env.supabaseUrl})`);

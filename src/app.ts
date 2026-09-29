@@ -1,10 +1,12 @@
 // Toàn bộ API của app. App Flutter chỉ nói chuyện với server này; server giữ
 // secret key và gọi Supabase.
+// Vercel dùng file này làm điểm vào (import express + export default app);
+// chạy trên máy thì server.ts gọi listen.
 
 import cors from 'cors';
 import express, { type ErrorRequestHandler } from 'express';
 import { authRoutes, requireUser } from './auth.ts';
-import type { Env } from './env.ts';
+import { loadEnv, type Env } from './env.ts';
 import { ApiError } from './http.ts';
 import { clubItemRoutes, clubRoutes } from './routes/clubs.ts';
 import { devRoutes } from './routes/dev.ts';
@@ -13,13 +15,13 @@ import { createPush } from './push.ts';
 import { meRoutes } from './routes/me.ts';
 import { runRoutes } from './routes/runs.ts';
 import { worldRoutes } from './routes/world.ts';
-import type { Supabase } from './supabase.ts';
+import { createSupabase, type Supabase } from './supabase.ts';
 
 /** Các nhánh cần đăng nhập. Ngoài /health và /auth, mọi route đều nằm dưới đây. */
 const PROTECTED = ['/me', '/runs', '/territory', '/leaderboard', '/feed',
   '/clubs', '/posts', '/comments', '/meetups', '/campaigns', '/dev', '/game'];
 
-export function createApp(env: Env, supa: Supabase) {
+function createApp(env: Env, supa: Supabase) {
   const app = express();
   app.disable('x-powered-by');
 
@@ -61,3 +63,7 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   console.error(err);
   res.status(500).json({ error: 'internal' });
 };
+
+export const env = loadEnv();
+
+export default createApp(env, createSupabase(env));

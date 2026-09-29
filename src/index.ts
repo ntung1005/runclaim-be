@@ -1,4 +1,4 @@
-// Điểm vào cho Vercel: export app Hono, Vercel tự chạy như serverless function.
+// Điểm vào cho Vercel: export app Express, Vercel tự chạy như serverless function.
 // Chạy trên máy thì dùng server.ts.
 
 import { createApp } from './app.ts';

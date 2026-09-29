@@ -4,10 +4,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Hono } from 'hono';
+import { Router } from 'express';
 import { neighbors } from '../game/hex_grid.ts';
 import { grid } from '../game/submit_run.ts';
-import { ApiError, dbError, num, readJson, type AppEnv } from '../http.ts';
+import { ApiError, dbError, num, readJson } from '../http.ts';
 import { notifyStolen, type Push } from '../push.ts';
 import type { Supabase } from '../supabase.ts';
 import { FREE_AGENT_CLUB } from './me.ts';
@@ -83,17 +83,17 @@ async function rivalCapture(admin: SupabaseClient, rivalId: string, cellIds: str
 }
 
 export function devRoutes(supa: Supabase, enabled: boolean, push: Push | null = null) {
-  const app = new Hono<AppEnv>();
+  const router = Router();
   const admin = supa.admin;
 
-  app.use(async (_c, next) => {
+  router.use((_req, _res, next) => {
     if (!enabled) throw new ApiError(404, 'dev_tools_disabled');
-    await next();
+    next();
   });
 
   /** 5 đối thủ demo chiếm mỗi người 25-75 ô quanh {lat, lng}. Không đụng vào ô của người thật. */
-  app.post('/rivals', async (c) => {
-    const body = await readJson(c);
+  router.post('/rivals', async (req, res) => {
+    const body = readJson(req);
     const origin = grid.cellAt({ lat: num(body, 'lat'), lng: num(body, 'lng') });
     const [oq, or] = origin.split(':').map(Number);
     const rivalIds = await ensureRivals(admin);
@@ -123,15 +123,15 @@ export function devRoutes(supa: Supabase, enabled: boolean, push: Push | null = 
       if (free.length === 0) continue;
       cells += (await rivalCapture(admin, rivalIds[i], free)).captured;
     }
-    return c.json({ rivals: rivalIds.length, cells });
+    return res.json({ rivals: rivalIds.length, cells });
   });
 
   /** Một đối thủ demo cướp một cụm ô của mình. Hộp thư (my_feed) sẽ có thông báo. */
-  app.post('/rival-attack', async (c) => {
-    const mine = await admin.from('cells').select('id').eq('owner_id', c.var.userId).limit(5000);
+  router.post('/rival-attack', async (req, res) => {
+    const mine = await admin.from('cells').select('id').eq('owner_id', req.userId).limit(5000);
     if (mine.error) throw dbError(mine.error);
     const ids = new Set(mine.data.map((r) => r.id as string));
-    if (ids.size === 0) return c.json({ stolen: 0 });
+    if (ids.size === 0) return res.json({ stolen: 0 });
 
     const start = pick([...ids]);
     const targets = [start, ...neighbors(start)].filter((id) => ids.has(id));
@@ -142,50 +142,50 @@ export function devRoutes(supa: Supabase, enabled: boolean, push: Push | null = 
       const result = await rivalCapture(admin, rival, targets);
       if (result.stolen === 0) continue;
       void notifyStolen(admin, push, result.activityId, rival);
-      return c.json({ stolen: result.stolen });
+      return res.json({ stolen: result.stolen });
     }
-    return c.json({ stolen: 0 });
+    return res.json({ stolen: 0 });
   });
 
   /** Cộng xu để thử tiêu (mua khiên) không cần chạy. {amount?} mặc định 200. → {coins} */
-  app.post('/coins', async (c) => {
-    const body = await readJson(c).catch(() => ({} as Record<string, unknown>));
+  router.post('/coins', async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
     const amount = typeof body.amount === 'number' ? Math.round(body.amount) : 200;
     if (amount <= 0 || amount > 10_000) throw new ApiError(400, 'invalid_amount');
-    const current = await admin.from('wallets').select('coins').eq('user_id', c.var.userId).maybeSingle();
+    const current = await admin.from('wallets').select('coins').eq('user_id', req.userId).maybeSingle();
     if (current.error) throw dbError(current.error);
     const coins = (current.data?.coins ?? 0) + amount;
-    const { error } = await admin.from('wallets').upsert({ user_id: c.var.userId, coins });
+    const { error } = await admin.from('wallets').upsert({ user_id: req.userId, coins });
     if (error) throw dbError(error);
-    return c.json({ coins });
+    return res.json({ coins });
   });
 
   /**
    * Một đối thủ demo chạy 5 lần qua các ô đang có khiên của mình để thử phá khiên.
    * → {shielded: số ô có khiên bị tấn công, stolen: số ô bị cướp (0 nếu khiên hiệu lực)}
    */
-  app.post('/shield-attack', async (c) => {
+  router.post('/shield-attack', async (req, res) => {
     const mine = await admin
       .from('cells')
       .select('id')
-      .eq('owner_id', c.var.userId)
+      .eq('owner_id', req.userId)
       .gt('shield_until', new Date().toISOString())
       .limit(7);
     if (mine.error) throw dbError(mine.error);
     const targets = mine.data.map((r) => r.id as string);
-    if (targets.length === 0) return c.json({ shielded: 0, stolen: 0 });
+    if (targets.length === 0) return res.json({ shielded: 0, stolen: 0 });
     const rival = pick(await ensureRivals(admin));
     let stolen = 0;
     for (let i = 0; i < 5; i++) stolen += (await rivalCapture(admin, rival, targets)).stolen;
-    return c.json({ shielded: targets.length, stolen });
+    return res.json({ shielded: targets.length, stolen });
   });
 
   /** Một runner giả xin vào CLB mình quản lý, đã chạy được 20-80% số km yêu cầu. */
-  app.post('/join-applicant', async (c) => {
+  router.post('/join-applicant', async (req, res) => {
     const me = await admin
       .from('profiles')
       .select('club_id, club_role, clubs!profiles_club_id_fkey(join_km, join_days)')
-      .eq('id', c.var.userId)
+      .eq('id', req.userId)
       .maybeSingle();
     if (me.error) throw dbError(me.error);
     if (!me.data || !['owner', 'admin'].includes(me.data.club_role)) throw new ApiError(403, 'not_club_admin');
@@ -207,8 +207,8 @@ export function devRoutes(supa: Supabase, enabled: boolean, push: Push | null = 
       expires_at: new Date(Date.now() + club.join_days * 86_400_000).toISOString(),
     });
     if (request.error) throw dbError(request.error);
-    return c.json({ name }, 201);
+    return res.status(201).json({ name });
   });
 
-  return app;
+  return router;
 }

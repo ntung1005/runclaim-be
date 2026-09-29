@@ -1,5 +1,5 @@
-import type { Context } from 'hono';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Request } from 'express';
 
 /** Lỗi trả về cho app dạng {"error": code}. code là chuỗi a-z_ để app dịch ra câu thông báo. */
 export class ApiError extends Error {
@@ -13,24 +13,22 @@ export class ApiError extends Error {
   }
 }
 
-export interface AppEnv {
-  Variables: {
-    userId: string;
-    username: string;
-    /** Client Supabase mang token của người dùng đang gọi. */
-    db: SupabaseClient;
-  };
+// requireUser (auth.ts) gắn các trường này vào request đã xác thực.
+declare global {
+  namespace Express {
+    interface Request {
+      userId: string;
+      username: string;
+      /** Client Supabase mang token của người dùng đang gọi. */
+      db: SupabaseClient;
+    }
+  }
 }
 
-export type AppContext = Context<AppEnv>;
-
-export async function readJson(c: Context): Promise<Record<string, unknown>> {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    throw new ApiError(400, 'invalid_json');
-  }
+/** Body JSON đã được express.json() đọc (app.ts). Không có body: invalid_json. */
+export function readJson(req: Request): Record<string, unknown> {
+  const body: unknown = req.body;
+  if (body === undefined) throw new ApiError(400, 'invalid_json');
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new ApiError(400, 'invalid_body');
   }
@@ -59,8 +57,8 @@ export function dbError(error: { message: string; code?: string }): ApiError {
 }
 
 /** Gọi hàm SQL bằng quyền của người dùng đang gọi. */
-export async function rpc<T = unknown>(c: AppContext, fn: string, params?: Record<string, unknown>): Promise<T> {
-  const { data, error } = await c.var.db.rpc(fn, params);
+export async function rpc<T = unknown>(req: Request, fn: string, params?: Record<string, unknown>): Promise<T> {
+  const { data, error } = await req.db.rpc(fn, params);
   if (error) throw dbError(error);
   return data as T;
 }
@@ -102,8 +100,8 @@ export function bool(body: Record<string, unknown>, key: string): boolean {
   return v;
 }
 
-export function queryNum(c: Context, key: string): number {
-  const v = Number(c.req.query(key));
+export function queryNum(req: Request, key: string): number {
+  const v = Number(req.query[key]);
   if (!Number.isFinite(v)) throw new ApiError(400, `invalid_${key}`);
   return v;
 }

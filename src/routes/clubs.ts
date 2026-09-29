@@ -1,8 +1,8 @@
 // CLB, bảng tin, họp mặt, chiến dịch. Mỗi route gọi một hàm SQL bằng quyền của
 // người dùng; phân quyền (chủ nhiệm, phó nhóm, thành viên) nằm trong các hàm đó.
 
-import { Hono } from 'hono';
-import { ApiError, bool, num, optNum, optStr, readJson, rpc, str, type AppEnv } from '../http.ts';
+import { Router } from 'express';
+import { ApiError, bool, num, optNum, optStr, readJson, rpc, str } from '../http.ts';
 
 const first = <T>(rows: T[]) => rows[0] ?? null;
 
@@ -22,98 +22,98 @@ function settingsParams(body: Record<string, unknown>) {
   };
 }
 
-export const clubRoutes = new Hono<AppEnv>();
+export const clubRoutes = Router();
 
-clubRoutes.get('/', async (c) => c.json(await rpc(c, 'list_clubs')));
+clubRoutes.get('/', async (req, res) => res.json(await rpc(req, 'list_clubs')));
 
-clubRoutes.post('/', async (c) => {
-  const body = await readJson(c);
-  const id = await rpc<string>(c, 'create_club', {
+clubRoutes.post('/', async (req, res) => {
+  const body = readJson(req);
+  const id = await rpc<string>(req, 'create_club', {
     p_name: str(body, 'name', { max: 40 }).trim(),
     p_color: num(body, 'color'),
     ...settingsParams(body),
   });
-  return c.json({ id }, 201);
+  return res.status(201).json({ id });
 });
 
-clubRoutes.get('/by-code/:code', async (c) =>
-  c.json(first(await rpc<unknown[]>(c, 'find_club_by_code', { p_invite_code: c.req.param('code') }))),
+clubRoutes.get('/by-code/:code', async (req, res) =>
+  res.json(first(await rpc<unknown[]>(req, 'find_club_by_code', { p_invite_code: req.params.code }))),
 );
 
 // Xin vào, rời CLB -------------------------------------------------------------
 
-clubRoutes.post('/join', async (c) => {
-  const body = await readJson(c);
-  return c.json(
-    await rpc(c, 'request_join', {
+clubRoutes.post('/join', async (req, res) => {
+  const body = readJson(req);
+  return res.json(
+    await rpc(req, 'request_join', {
       p_club_id: optStr(body, 'club_id', 100),
       p_invite_code: optStr(body, 'invite_code', 20),
     }),
   );
 });
 
-clubRoutes.get('/join-request', async (c) => c.json(first(await rpc<unknown[]>(c, 'my_join_request'))));
+clubRoutes.get('/join-request', async (req, res) => res.json(first(await rpc<unknown[]>(req, 'my_join_request'))));
 
-clubRoutes.delete('/join-request', async (c) => {
-  await rpc(c, 'cancel_join_request');
-  return c.json({ ok: true });
+clubRoutes.delete('/join-request', async (req, res) => {
+  await rpc(req, 'cancel_join_request');
+  return res.json({ ok: true });
 });
 
-clubRoutes.post('/leave', async (c) => {
-  await rpc(c, 'leave_club');
-  return c.json({ ok: true });
+clubRoutes.post('/leave', async (req, res) => {
+  await rpc(req, 'leave_club');
+  return res.json({ ok: true });
 });
 
 // CLB của mình -----------------------------------------------------------------
 
-clubRoutes.get('/mine', async (c) => c.json(first(await rpc<unknown[]>(c, 'my_club'))));
+clubRoutes.get('/mine', async (req, res) => res.json(first(await rpc<unknown[]>(req, 'my_club'))));
 
-clubRoutes.patch('/mine', async (c) => {
-  await rpc(c, 'update_club', settingsParams(await readJson(c)));
-  return c.json({ ok: true });
+clubRoutes.patch('/mine', async (req, res) => {
+  await rpc(req, 'update_club', settingsParams(readJson(req)));
+  return res.json({ ok: true });
 });
 
-clubRoutes.get('/mine/join-requests', async (c) => c.json(await rpc(c, 'club_join_requests')));
+clubRoutes.get('/mine/join-requests', async (req, res) => res.json(await rpc(req, 'club_join_requests')));
 
-clubRoutes.post('/mine/join-requests/:id/approve', async (c) => {
-  await rpc(c, 'approve_join_request', { p_request_id: c.req.param('id') });
-  return c.json({ ok: true });
+clubRoutes.post('/mine/join-requests/:id/approve', async (req, res) => {
+  await rpc(req, 'approve_join_request', { p_request_id: req.params.id });
+  return res.json({ ok: true });
 });
 
-clubRoutes.post('/mine/join-requests/:id/reject', async (c) => {
-  await rpc(c, 'reject_join_request', { p_request_id: c.req.param('id') });
-  return c.json({ ok: true });
+clubRoutes.post('/mine/join-requests/:id/reject', async (req, res) => {
+  await rpc(req, 'reject_join_request', { p_request_id: req.params.id });
+  return res.json({ ok: true });
 });
 
-clubRoutes.delete('/mine/members/:userId', async (c) => {
-  await rpc(c, 'remove_member', { p_user: c.req.param('userId') });
-  return c.json({ ok: true });
+clubRoutes.delete('/mine/members/:userId', async (req, res) => {
+  await rpc(req, 'remove_member', { p_user: req.params.userId });
+  return res.json({ ok: true });
 });
 
-clubRoutes.put('/mine/members/:userId/role', async (c) => {
-  const body = await readJson(c);
-  await rpc(c, 'set_member_role', { p_user: c.req.param('userId'), p_role: str(body, 'role', { max: 20 }) });
-  return c.json({ ok: true });
+clubRoutes.put('/mine/members/:userId/role', async (req, res) => {
+  const body = readJson(req);
+  await rpc(req, 'set_member_role', { p_user: req.params.userId, p_role: str(body, 'role', { max: 20 }) });
+  return res.json({ ok: true });
 });
 
-clubRoutes.get('/mine/posts', async (c) => c.json(await rpc(c, 'club_feed')));
+clubRoutes.get('/mine/posts', async (req, res) => res.json(await rpc(req, 'club_feed')));
 
-clubRoutes.post('/mine/posts', async (c) => {
-  const body = await readJson(c);
-  const id = await rpc<string>(c, 'create_post', {
+clubRoutes.post('/mine/posts', async (req, res) => {
+  const body = readJson(req);
+  const id = await rpc<string>(req, 'create_post', {
     p_body: str(body, 'body', { max: 500, optional: true }),
     p_activity_id: optStr(body, 'run_id', 64),
   });
-  return c.json({ id }, 201);
+  return res.status(201).json({ id });
 });
 
-clubRoutes.get('/mine/meetups', async (c) => c.json(await rpc(c, 'club_meetups')));
+clubRoutes.get('/mine/meetups', async (req, res) => res.json(await rpc(req, 'club_meetups')));
 
-clubRoutes.post('/mine/meetups', async (c) => {
-  const body = await readJson(c);
+clubRoutes.post('/mine/meetups', async (req, res) => {
+  const body = readJson(req);
   const startsAt = Date.parse(str(body, 'starts_at', { max: 40 }));
   if (!Number.isFinite(startsAt)) throw new ApiError(400, 'invalid_starts_at');
-  const id = await rpc<string>(c, 'create_meetup', {
+  const id = await rpc<string>(req, 'create_meetup', {
     p_title: str(body, 'title', { max: 80 }),
     p_starts_at: new Date(startsAt).toISOString(),
     p_lat: num(body, 'lat'),
@@ -121,73 +121,73 @@ clubRoutes.post('/mine/meetups', async (c) => {
     p_place: str(body, 'place', { max: 120, optional: true }),
     p_note: str(body, 'note', { max: 280, optional: true }),
   });
-  return c.json({ id }, 201);
+  return res.status(201).json({ id });
 });
 
-clubRoutes.get('/mine/campaigns', async (c) => c.json(await rpc(c, 'club_campaigns')));
+clubRoutes.get('/mine/campaigns', async (req, res) => res.json(await rpc(req, 'club_campaigns')));
 
-clubRoutes.post('/mine/campaigns', async (c) => {
-  const body = await readJson(c);
-  const id = await rpc<string>(c, 'start_campaign', {
+clubRoutes.post('/mine/campaigns', async (req, res) => {
+  const body = readJson(req);
+  const id = await rpc<string>(req, 'start_campaign', {
     p_ward_id: str(body, 'ward_id', { max: 64 }),
     p_target_cells: Math.round(num(body, 'target_cells')),
     p_days: Math.round(num(body, 'days')),
   });
-  return c.json({ id }, 201);
+  return res.status(201).json({ id });
 });
 
 // Theo id CLB (đặt sau /mine để không bị nhầm "mine" là id) ----------------------
 
-clubRoutes.get('/:id/members', async (c) => c.json(await rpc(c, 'club_members', { p_club_id: c.req.param('id') })));
+clubRoutes.get('/:id/members', async (req, res) => res.json(await rpc(req, 'club_members', { p_club_id: req.params.id })));
 
-clubRoutes.get('/:id/territory', async (c) =>
-  c.json(await rpc(c, 'club_territory', { p_club_id: c.req.param('id') })),
+clubRoutes.get('/:id/territory', async (req, res) =>
+  res.json(await rpc(req, 'club_territory', { p_club_id: req.params.id })),
 );
 
 // Bài viết, bình luận, họp mặt, chiến dịch theo id --------------------------------
 
-export const clubItemRoutes = new Hono<AppEnv>();
+export const clubItemRoutes = Router();
 
-clubItemRoutes.delete('/posts/:id', async (c) => {
-  await rpc(c, 'delete_post', { p_post_id: c.req.param('id') });
-  return c.json({ ok: true });
+clubItemRoutes.delete('/posts/:id', async (req, res) => {
+  await rpc(req, 'delete_post', { p_post_id: req.params.id });
+  return res.json({ ok: true });
 });
 
-clubItemRoutes.get('/posts/:id/comments', async (c) =>
-  c.json(await rpc(c, 'post_comments', { p_post_id: c.req.param('id') })),
+clubItemRoutes.get('/posts/:id/comments', async (req, res) =>
+  res.json(await rpc(req, 'post_comments', { p_post_id: req.params.id })),
 );
 
-clubItemRoutes.post('/posts/:id/comments', async (c) => {
-  const body = await readJson(c);
-  const id = await rpc<string>(c, 'create_comment', {
-    p_post_id: c.req.param('id'),
+clubItemRoutes.post('/posts/:id/comments', async (req, res) => {
+  const body = readJson(req);
+  const id = await rpc<string>(req, 'create_comment', {
+    p_post_id: req.params.id,
     p_body: str(body, 'body', { max: 500 }),
     p_reply_to: optStr(body, 'reply_to', 64),
   });
-  return c.json({ id }, 201);
+  return res.status(201).json({ id });
 });
 
-clubItemRoutes.post('/posts/:id/like', async (c) =>
-  c.json(await rpc(c, 'toggle_like', { p_post_id: c.req.param('id') })),
+clubItemRoutes.post('/posts/:id/like', async (req, res) =>
+  res.json(await rpc(req, 'toggle_like', { p_post_id: req.params.id })),
 );
 
-clubItemRoutes.delete('/comments/:id', async (c) => {
-  await rpc(c, 'delete_comment', { p_comment_id: c.req.param('id') });
-  return c.json({ ok: true });
+clubItemRoutes.delete('/comments/:id', async (req, res) => {
+  await rpc(req, 'delete_comment', { p_comment_id: req.params.id });
+  return res.json({ ok: true });
 });
 
-clubItemRoutes.post('/meetups/:id/rsvp', async (c) => {
-  const body = await readJson(c);
-  await rpc(c, 'rsvp_meetup', { p_meetup_id: c.req.param('id'), p_going: bool(body, 'going') });
-  return c.json({ ok: true });
+clubItemRoutes.post('/meetups/:id/rsvp', async (req, res) => {
+  const body = readJson(req);
+  await rpc(req, 'rsvp_meetup', { p_meetup_id: req.params.id, p_going: bool(body, 'going') });
+  return res.json({ ok: true });
 });
 
-clubItemRoutes.delete('/meetups/:id', async (c) => {
-  await rpc(c, 'delete_meetup', { p_meetup_id: c.req.param('id') });
-  return c.json({ ok: true });
+clubItemRoutes.delete('/meetups/:id', async (req, res) => {
+  await rpc(req, 'delete_meetup', { p_meetup_id: req.params.id });
+  return res.json({ ok: true });
 });
 
-clubItemRoutes.post('/campaigns/:id/cancel', async (c) => {
-  await rpc(c, 'cancel_campaign', { p_campaign_id: c.req.param('id') });
-  return c.json({ ok: true });
+clubItemRoutes.post('/campaigns/:id/cancel', async (req, res) => {
+  await rpc(req, 'cancel_campaign', { p_campaign_id: req.params.id });
+  return res.json({ ok: true });
 });

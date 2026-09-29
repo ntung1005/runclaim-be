@@ -1,13 +1,13 @@
 // Game hằng ngày: xu, rương đã mở, nhiệm vụ hôm nay.
 
-import { Hono } from 'hono';
+import { Router } from 'express';
 import { dailyQuests, SHIELD, SHIELD_BREAK_COST_PER_CELL, SHIELD_CROSSINGS, vnDay, vnDayStart, type DayStats } from '../game/daily.ts';
 import { neighbors } from '../game/hex_grid.ts';
-import { ApiError, dbError, readJson, str, type AppEnv } from '../http.ts';
+import { ApiError, dbError, readJson, str } from '../http.ts';
 import type { Supabase } from '../supabase.ts';
 
 export function gameRoutes(supa: Supabase) {
-  const app = new Hono<AppEnv>();
+  const router = Router();
   const admin = supa.admin;
 
   /** Tổng hợp buổi chạy hợp lệ nộp trong ngày [day], cùng số rương đã mở. */
@@ -35,8 +35,8 @@ export function gameRoutes(supa: Supabase) {
   }
 
   /** GET /game/today: {day, coins, chests_opened: [cell_id], quests: [...]} */
-  app.get('/today', async (c) => {
-    const userId = c.var.userId;
+  router.get('/today', async (req, res) => {
+    const userId = req.userId;
     const day = vnDay();
     const [stats, wallet, opened, claims] = await Promise.all([
       dayStats(userId, day),
@@ -46,7 +46,7 @@ export function gameRoutes(supa: Supabase) {
     ]);
     for (const r of [wallet, opened, claims]) if (r.error) throw dbError(r.error);
     const claimed = new Set((claims.data ?? []).map((r) => r.quest_key as string));
-    return c.json({
+    return res.json({
       day,
       coins: wallet.data?.coins ?? 0,
       shield: {
@@ -70,10 +70,10 @@ export function gameRoutes(supa: Supabase) {
   });
 
   /** POST /game/quests/:key/claim → {coins} */
-  app.post('/quests/:key/claim', async (c) => {
-    const userId = c.var.userId;
+  router.post('/quests/:key/claim', async (req, res) => {
+    const userId = req.userId;
     const day = vnDay();
-    const quest = dailyQuests(userId, day).find((q) => q.key === c.req.param('key'));
+    const quest = dailyQuests(userId, day).find((q) => q.key === req.params.key);
     if (!quest) throw new ApiError(404, 'quest_not_found');
     const stats = await dayStats(userId, day);
     if (stats[quest.metric] < quest.target) throw new ApiError(400, 'quest_not_done');
@@ -85,7 +85,7 @@ export function gameRoutes(supa: Supabase) {
     });
     if (error) throw dbError(error);
     if (data === null) throw new ApiError(409, 'quest_claimed');
-    return c.json({ coins: data });
+    return res.json({ coins: data });
   });
 
   /**
@@ -93,9 +93,9 @@ export function gameRoutes(supa: Supabase) {
    * (tối đa SHIELD.maxCells ô), trả SHIELD.costPerCell xu mỗi ô chưa có khiên.
    * → {coins, cells, until, cost}
    */
-  app.post('/shield', async (c) => {
-    const userId = c.var.userId;
-    const cellId = str(await readJson(c), 'cell_id', { max: 40 });
+  router.post('/shield', async (req, res) => {
+    const userId = req.userId;
+    const cellId = str(readJson(req), 'cell_id', { max: 40 });
     const mine = await admin.from('cells').select('id').eq('owner_id', userId).limit(10_000);
     if (mine.error) throw dbError(mine.error);
     const owned = new Set(mine.data.map((r) => r.id as string));
@@ -118,7 +118,7 @@ export function gameRoutes(supa: Supabase) {
       p_hours: SHIELD.hours,
     });
     if (error) throw dbError(error);
-    return c.json(data);
+    return res.json(data);
   });
 
   /**
@@ -126,9 +126,9 @@ export function gameRoutes(supa: Supabase) {
    * khiên trên vùng liền nhau có khiên của người khác chứa ô đó (tối đa
    * SHIELD.maxCells ô). Sau đó vẫn phải chạy xuyên ô để chiếm. → {coins, cells, cost}
    */
-  app.post('/shield/break', async (c) => {
-    const userId = c.var.userId;
-    const cellId = str(await readJson(c), 'cell_id', { max: 40 });
+  router.post('/shield/break', async (req, res) => {
+    const userId = req.userId;
+    const cellId = str(readJson(req), 'cell_id', { max: 40 });
     const now = new Date().toISOString();
     const cell = await admin.from('cells').select('owner_id').eq('id', cellId).gt('shield_until', now).maybeSingle();
     if (cell.error) throw dbError(cell.error);
@@ -159,35 +159,35 @@ export function gameRoutes(supa: Supabase) {
       p_cost: SHIELD_BREAK_COST_PER_CELL,
     });
     if (error) throw dbError(error);
-    return c.json(data);
+    return res.json(data);
   });
 
-  return app;
+  return router;
 }
 
 /** /me/devices: token FCM của thiết bị để nhận thông báo đẩy. */
 export function deviceRoutes(supa: Supabase) {
-  const app = new Hono<AppEnv>();
+  const router = Router();
 
   /** POST {token, platform}: đăng ký hoặc chuyển token sang tài khoản đang đăng nhập. */
-  app.post('/', async (c) => {
-    const body = await readJson(c);
+  router.post('/', async (req, res) => {
+    const body = readJson(req);
     const token = str(body, 'token', { max: 4096 });
     const platform = str(body, 'platform', { max: 20, optional: true });
     const { error } = await supa.admin
       .from('device_tokens')
-      .upsert({ token, user_id: c.var.userId, platform, updated_at: new Date().toISOString() });
+      .upsert({ token, user_id: req.userId, platform, updated_at: new Date().toISOString() });
     if (error) throw dbError(error);
-    return c.json({ ok: true });
+    return res.json({ ok: true });
   });
 
   /** DELETE {token}: khi đăng xuất. */
-  app.delete('/', async (c) => {
-    const token = str(await readJson(c), 'token', { max: 4096 });
-    const { error } = await supa.admin.from('device_tokens').delete().eq('token', token).eq('user_id', c.var.userId);
+  router.delete('/', async (req, res) => {
+    const token = str(readJson(req), 'token', { max: 4096 });
+    const { error } = await supa.admin.from('device_tokens').delete().eq('token', token).eq('user_id', req.userId);
     if (error) throw dbError(error);
-    return c.json({ ok: true });
+    return res.json({ ok: true });
   });
 
-  return app;
+  return router;
 }

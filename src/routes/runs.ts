@@ -1,8 +1,8 @@
 // Buổi chạy: nộp điểm GPS thô để tính lãnh thổ, đọc lại lịch sử của mình.
 
-import { Hono } from 'hono';
+import { Router } from 'express';
 import { submitRun } from '../game/submit_run.ts';
-import { dbError, readJson, type AppEnv } from '../http.ts';
+import { dbError, readJson } from '../http.ts';
 import type { Push } from '../push.ts';
 import type { Supabase } from '../supabase.ts';
 
@@ -21,26 +21,26 @@ export function toPolyline(segments: unknown): number[][][] {
 }
 
 export function runRoutes(supa: Supabase, push: Push | null = null) {
-  const app = new Hono<AppEnv>();
+  const router = Router();
 
-  app.post('/', async (c) => c.json(await submitRun(supa.admin, c.var.userId, await readJson(c), push)));
+  router.post('/', async (req, res) => res.json(await submitRun(supa.admin, req.userId, readJson(req), push)));
 
-  app.get('/', async (c) => {
-    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 200), 1), 500);
-    const { data, error } = await c.var.db
+  router.get('/', async (req, res) => {
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 200), 1), 500);
+    const { data, error } = await req.db
       .from('activities')
       .select(
         'id, started_at, ended_at, distance_m, moving_s, suspicious_m, flagged, simulated, ' +
           'segments, cell_ids, cells_captured, cells_stolen, loops, loop_cells, splits',
       )
-      .eq('user_id', c.var.userId)
+      .eq('user_id', req.userId)
       .order('started_at', { ascending: false })
       .limit(limit);
     if (error) throw dbError(error);
-    return c.json(
+    return res.json(
       (data as unknown as Record<string, unknown>[]).map((r) => ({ ...r, segments: toPolyline(r.segments) })),
     );
   });
 
-  return app;
+  return router;
 }

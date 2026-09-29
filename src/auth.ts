@@ -3,8 +3,8 @@
 // (không gửi thư, không cần xác nhận). Người dùng không bao giờ thấy email này.
 
 import type { Session } from '@supabase/supabase-js';
-import { Hono, type MiddlewareHandler } from 'hono';
-import { ApiError, readJson, type AppEnv } from './http.ts';
+import { Router, type Request, type RequestHandler } from 'express';
+import { ApiError, readJson } from './http.ts';
 import type { Supabase } from './supabase.ts';
 
 export const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
@@ -53,13 +53,13 @@ export class AttemptLimiter {
   }
 }
 
-function clientIp(c: { req: { header(name: string): string | undefined } }): string {
-  return c.req.header('x-forwarded-for')?.split(',')[0].trim() ?? 'local';
+function clientIp(req: Request): string {
+  return req.header('x-forwarded-for')?.split(',')[0].trim() ?? 'local';
 }
 
 export function authRoutes(supa: Supabase, maxAttempts: number) {
   const limiter = new AttemptLimiter(maxAttempts, 5 * 60_000);
-  const app = new Hono<AppEnv>();
+  const router = Router();
 
   const signIn = async (username: string, password: string) => {
     const { data, error } = await supa.newAuthClient().auth.signInWithPassword({
@@ -77,9 +77,9 @@ export function authRoutes(supa: Supabase, maxAttempts: number) {
     return sessionJson(data.session, username);
   };
 
-  app.post('/register', async (c) => {
-    const { username, password } = parseCredentials(await readJson(c));
-    limiter.check(`register:${clientIp(c)}`);
+  router.post('/register', async (req, res) => {
+    const { username, password } = parseCredentials(readJson(req));
+    limiter.check(`register:${clientIp(req)}`);
     const { error } = await supa.admin.auth.admin.createUser({
       email: usernameToEmail(username),
       password,
@@ -92,43 +92,43 @@ export function authRoutes(supa: Supabase, maxAttempts: number) {
       console.error('Tạo tài khoản lỗi', error);
       throw new ApiError(502, 'auth_unavailable');
     }
-    return c.json(await signIn(username, password), 201);
+    res.status(201).json(await signIn(username, password));
   });
 
-  app.post('/login', async (c) => {
-    const body = await readJson(c);
+  router.post('/login', async (req, res) => {
+    const body = readJson(req);
     const username = typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
     const password = typeof body.password === 'string' ? body.password : '';
     if (!username || !password) throw new ApiError(401, 'invalid_credentials');
-    limiter.check(`login:${clientIp(c)}:${username}`);
-    return c.json(await signIn(username, password));
+    limiter.check(`login:${clientIp(req)}:${username}`);
+    res.json(await signIn(username, password));
   });
 
-  app.post('/refresh', async (c) => {
-    const body = await readJson(c);
+  router.post('/refresh', async (req, res) => {
+    const body = readJson(req);
     const refreshToken = typeof body.refresh_token === 'string' ? body.refresh_token : '';
     if (!refreshToken) throw new ApiError(401, 'invalid_refresh_token');
     const { data, error } = await supa.newAuthClient().auth.refreshSession({ refresh_token: refreshToken });
     if (error || !data.session) throw new ApiError(401, 'invalid_refresh_token');
     const username = String(data.session.user.user_metadata?.username ?? '');
-    return c.json(sessionJson(data.session, username));
+    res.json(sessionJson(data.session, username));
   });
 
-  app.post('/logout', requireUser(supa), async (c) => {
-    const token = c.req.header('Authorization')!.slice('Bearer '.length);
+  router.post('/logout', requireUser(supa), async (req, res) => {
+    const token = req.header('Authorization')!.slice('Bearer '.length);
     // Thu hồi refresh token của phiên này. Lỗi ở đây không chặn app đăng xuất.
     const { error } = await supa.admin.auth.admin.signOut(token, 'local');
     if (error) console.warn('Thu hồi phiên lỗi', error.message);
-    return c.json({ ok: true });
+    res.json({ ok: true });
   });
 
-  return app;
+  return router;
 }
 
-/** Xác thực JWT (chữ ký, hạn dùng), gắn userId và client Supabase của người dùng vào context. */
-export function requireUser(supa: Supabase): MiddlewareHandler<AppEnv> {
-  return async (c, next) => {
-    const header = c.req.header('Authorization') ?? '';
+/** Xác thực JWT (chữ ký, hạn dùng), gắn userId và client Supabase của người dùng vào request. */
+export function requireUser(supa: Supabase): RequestHandler {
+  return async (req, _res, next) => {
+    const header = req.header('Authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
     if (!token) throw new ApiError(401, 'unauthorized');
     const { data, error } = await supa.anon.auth.getClaims(token);
@@ -136,9 +136,9 @@ export function requireUser(supa: Supabase): MiddlewareHandler<AppEnv> {
     if (error || !claims?.sub || claims.role !== 'authenticated' || claims.is_anonymous) {
       throw new ApiError(401, 'unauthorized');
     }
-    c.set('userId', claims.sub);
-    c.set('username', String(claims.user_metadata?.username ?? ''));
-    c.set('db', supa.asUser(token));
-    await next();
+    req.userId = claims.sub;
+    req.username = String(claims.user_metadata?.username ?? '');
+    req.db = supa.asUser(token);
+    next();
   };
 }

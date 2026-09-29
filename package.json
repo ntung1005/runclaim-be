@@ -1,0 +1,27 @@
+{
+  "name": "runclaim-be",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "dev": "node --env-file=.env --watch src/server.ts",
+    "start": "node --env-file=.env src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "e2e": "node --env-file=.env test/e2e.ts",
+    "seed": "node scripts/generate_seed.ts",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "db:env": "supabase status -o env"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "@supabase/supabase-js": "^2.57.0",
+    "hono": "^4.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "supabase": "2.117.0",
+    "typescript": "^5.9.0"
+  }
+}
